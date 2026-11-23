@@ -1,0 +1,5 @@
+{
+  "name": "agent-roster",
+  "owner": { "name": "ACReturns" },
+  "plugins": [{ "name": "agent-roster", "source": "./" }]
+}
