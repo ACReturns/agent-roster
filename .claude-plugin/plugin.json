@@ -1,6 +1,6 @@
 {
   "name": "agent-roster",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "A pane listing your agents, each with a customizable Clawd identifier",
   "license": "MIT",
   "author": { "name": "ACReturns" },
