@@ -1,4 +1,4 @@
-import { atom, read, update } from 'claude-code'
+import { atom, update } from 'claude-code'
 import type { Register } from 'claude-code'
 
 import type { ClawdIds } from '../types'
@@ -13,52 +13,89 @@ const ids = atom({ plugin: 'agent-roster', key: 'ids' } as const, {} as ClawdIds
 
 type Agent = { name: string; description: string }
 
-// A 16x12 pixel bitmap of Clawd, in orange: eye stalks, a shell, pincer
-// claws and legs. '.' is transparent; the other letters key CLAWD_HEX /
-// CLAWD_RGB below. Kept column-symmetric by construction.
+// A 22x13 pixel bitmap of Clawd the crab: round eyes on stalks, a domed
+// shell, two pincer claws held out to the sides, and small legs peeking out
+// underneath. '.' is transparent; the other letters key CLAWD_HEX / CLAWD_RGB
+// below. Kept column-symmetric by construction.
 const CLAWD_PIXELS: readonly string[] = [
-  '...DD......DD...',
-  '...KK......KK...',
-  '....OOOOOOOO....',
-  '..OOOOOOOOOOOO..',
-  'DDOOOKKOOKKOOODD',
-  'DDDOOOOOOOOOODDD',
-  'D.DOOOOOOOOOOD.D',
-  'DDOOOOOOOOOOOODD',
-  'D.OOOOOOOOOOOO.D',
-  '..DDOOOOOOOODD..',
-  'DD............DD',
-  '.DD..........DD.',
+  '.......WW....WW.......',
+  '.......WKW..WKW.......',
+  '..O....WW....WW....O..',
+  'OOOO....D.OO.D....OOOO',
+  'KKKKD..OOOOOOOO..DKKKK',
+  '.OOODOOOOOOOOOOOODOOO.',
+  '...DDOOOOOOOOOOOODD...',
+  '.....OOOOOOOOOOOO.....',
+  '.....OOOOOOOOOOOO.....',
+  '.....DOOOOOOOOOOD.....',
+  '...D....DDDDDD....D...',
+  '...DD............DD...',
+  '.DD................DD.',
 ]
 
 const CLAWD_HEX: Readonly<Record<string, string>> = {
   O: '#ff9736',
   D: '#cc6a1e',
   K: '#1a1a1a',
+  W: '#fff6ea',
 }
 
 const CLAWD_RGB: Readonly<Record<string, number>> = {
   O: 0xff9736,
   D: 0xcc6a1e,
   K: 0x1a1a1a,
+  W: 0xfff6ea,
+}
+
+// Bounding boxes (in CLAWD_PIXELS coordinates) used to split the bitmap into
+// independently animated groups: each claw pinches, the eyes blink, and
+// everything else (shell + legs) rides along with a slow idle bob.
+const CLAWD_CLAW_L = { x0: 0, x1: 4, y0: 2, y1: 7, pivot: '3.8px 5.6px' }
+const CLAWD_CLAW_R = { x0: 17, x1: 21, y0: 2, y1: 7, pivot: '18.2px 5.6px' }
+const CLAWD_EYES = { x0: 7, x1: 14, y0: 0, y1: 3, pivot: '11px 3px' }
+
+function inBox(x: number, y: number, box: { x0: number; x1: number; y0: number; y1: number }): boolean {
+  return x >= box.x0 && x <= box.x1 && y >= box.y0 && y <= box.y1
 }
 
 function clawdSvgSource(): string {
   const columns = CLAWD_PIXELS[0].length
   const rows = CLAWD_PIXELS.length
-  const rects: string[] = []
+  const groups = { clawL: [] as string[], clawR: [] as string[], eyes: [] as string[], body: [] as string[] }
 
   CLAWD_PIXELS.forEach((row, y) => {
     for (let x = 0; x < row.length; x++) {
       const cell = row[x]
       if (cell === '.') continue
-      rects.push(`<rect x="${x}" y="${y}" width="1" height="1" fill="${CLAWD_HEX[cell]}"/>`)
+      const rect = `<rect x="${x}" y="${y}" width="1" height="1" fill="${CLAWD_HEX[cell]}"/>`
+      if (inBox(x, y, CLAWD_CLAW_L)) groups.clawL.push(rect)
+      else if (inBox(x, y, CLAWD_CLAW_R)) groups.clawR.push(rect)
+      else if (inBox(x, y, CLAWD_EYES)) groups.eyes.push(rect)
+      else groups.body.push(rect)
     }
   })
 
+  // Idle animation: a slow bob for the whole crab, an occasional blink, and
+  // both claws giving a small periodic pinch (mirrored, slightly offset).
+  const style = `.clawd-bob{animation:clawd-bob 2.6s ease-in-out infinite}` +
+    `@keyframes clawd-bob{0%,100%{transform:translateY(0)}50%{transform:translateY(-.6px)}}` +
+    `.clawd-blink{animation:clawd-blink 4.8s ease-in-out infinite;transform-origin:${CLAWD_EYES.pivot}}` +
+    `@keyframes clawd-blink{0%,90%,100%{transform:scaleY(1)}95%{transform:scaleY(.12)}}` +
+    `.clawd-claw-l{animation:clawd-pinch-l 3.4s ease-in-out infinite;transform-origin:${CLAWD_CLAW_L.pivot}}` +
+    `.clawd-claw-r{animation:clawd-pinch-r 3.4s ease-in-out infinite .15s;transform-origin:${CLAWD_CLAW_R.pivot}}` +
+    `@keyframes clawd-pinch-l{0%,75%,100%{transform:rotate(0)}85%{transform:rotate(-9deg)}}` +
+    `@keyframes clawd-pinch-r{0%,75%,100%{transform:rotate(0)}85%{transform:rotate(9deg)}}`
+
   return (
-    `<svg viewBox="0 0 ${columns} ${rows}" xmlns="http://www.w3.org/2000/svg" ` +
-    `shape-rendering="crispEdges">${rects.join('')}</svg>`
+    `<svg viewBox="0 0 ${columns} ${rows}" xmlns="http://www.w3.org/2000/svg" shape-rendering="crispEdges">` +
+    `<style>${style}</style>` +
+    `<g class="clawd-bob">` +
+    `<g>${groups.body.join('')}</g>` +
+    `<g class="clawd-claw-l">${groups.clawL.join('')}</g>` +
+    `<g class="clawd-claw-r">${groups.clawR.join('')}</g>` +
+    `<g class="clawd-blink">${groups.eyes.join('')}</g>` +
+    `</g>` +
+    `</svg>`
   )
 }
 
@@ -115,14 +152,6 @@ function clawdRasterCells(): { cells: string; columns: number; rows: number } {
 
   const bytes = new Uint8Array(Uint32Array.from(words).buffer)
   return { cells: bytes.toBase64(), columns, rows }
-}
-
-function autoId(name: string): string {
-  let hash = 0
-  for (let i = 0; i < name.length; i++) {
-    hash = (hash * 31 + name.charCodeAt(i)) >>> 0
-  }
-  return 'CLAWD-' + hash.toString(36).toUpperCase().padStart(4, '0').slice(-4)
 }
 
 function truncate(text: string, max: number): string {
@@ -225,7 +254,6 @@ export const register: Register = on => {
     const resolved = $.ui.resolve(e)
     const { Box, Text, Button } = resolved as any
     const agents = await loadAgents($)
-    const customIds = await read($, ids)
 
     const renderIcon = (keySuffix: string) => {
       if (e.surface === 'terminal') {
@@ -241,7 +269,7 @@ export const register: Register = on => {
           key={`clawd-icon-${keySuffix}`}
           source={CLAWD_SVG_SOURCE}
           alt="Clawd"
-          width={32}
+          width={40}
           height={24}
         />
       )
@@ -256,7 +284,6 @@ export const register: Register = on => {
           <Text dimColor>No agents found under ~/.claude/agents.</Text>
         )}
         {agents.map(agent => {
-          const clawdId = customIds[agent.name] ?? autoId(agent.name)
           return (
             <Box flexDirection="column" key={agent.name}>
               <Box flexDirection="row">
@@ -264,9 +291,6 @@ export const register: Register = on => {
                 <Text> </Text>
                 <Box flexDirection="column">
                   <Box flexDirection="row">
-                    <Text bold color="cyan">
-                      [{clawdId}]{' '}
-                    </Text>
                     <Text bold>{agent.name}</Text>
                   </Box>
                   <Box flexDirection="row">
